@@ -1,0 +1,453 @@
+# AIVA Backend — Complete Analysis & Latency Optimization Report
+
+## Architecture Overview
+
+```mermaid
+graph LR
+    A["🎤 Audio Input\n(WebSocket)"] --> B["STT\nGroq Whisper v3 Turbo"]
+    B --> B2["STT Post-Processor\nGroq Llama 3.1 8B"]
+    B --> C["RAG Retrieval\nFAISS + Gemini Embedding"]
+    C --> D["LLM Agent\nGroq Llama 3.1 8B"]
+    D --> E["TTS\nGemini 2.5 Flash TTS"]
+    E --> F["🔊 Audio Response\n(WebSocket)"]
+    
+    style A fill:#1a1a2e,stroke:#e94560,color:#fff
+    style B fill:#1a1a2e,stroke:#0f3460,color:#fff
+    style C fill:#1a1a2e,stroke:#16213e,color:#fff
+    style D fill:#1a1a2e,stroke:#533483,color:#fff
+    style E fill:#1a1a2e,stroke:#e94560,color:#fff
+    style F fill:#1a1a2e,stroke:#0f3460,color:#fff
+```
+
+### Current Stack
+
+| Component | Provider | Model | Transport |
+|-----------|----------|-------|-----------|
+| **STT** | Groq | `whisper-large-v3-turbo` | REST (sync in executor) |
+| **STT Post-Processing** | Groq | `llama-3.1-8b-instant` | REST (sync) |
+| **RAG Embeddings** | Google | `gemini-embedding-001` | REST (sync in executor) |
+| **RAG Vector Store** | FAISS | HNSW index (local) | In-memory |
+| **LLM Agent** | Groq | `llama-3.1-8b-instant` | REST (sync) |
+| **TTS** | Google | `gemini-2.5-flash-preview-tts` | REST (sync in executor) |
+| **Transport** | WebSocket | FastAPI | Persistent connection |
+
+---
+
+## 🔴 Critical Latency Bottlenecks
+
+### 1. Double-Pass STT (Tamil Detection) — Adds 500-1500ms
+
+```mermaid
+graph TD
+    A["Audio Input"] --> B["Pass 1: Force English\n~500-800ms"]
+    B --> C{"Tamil words\ndetected?"}
+    C -->|Yes| D["Pass 2: Re-transcribe Tamil\n+500-800ms ❌"]
+    C -->|No| E["Use English result"]
+    D --> F["Final Result"]
+    E --> F
+```
+
+> [!CAUTION]
+> [stt.py L91-126](file:///e:/Downloads/AIVA---3D-AI-Model-Backend-main/audio/stt.py#L91-L126) — Every Tamil query hits Groq Whisper **twice**. This alone can add 500-1500ms to every Tamil interaction.
+
+**Why this is bad:** The heuristic Tamil detection (checking for romanized Tamil words like "saapadu", "eppadi") is fragile, causes false positives for English words that sound similar, and doubles the STT latency.
+
+---
+
+### 2. Sequential Pipeline — No Parallelism
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant WS as WebSocket Handler
+    participant STT
+    participant RAG
+    participant Agent
+    participant TTS
+
+    Client->>WS: Audio Data
+    WS->>STT: transcribe_audio()
+    Note over STT: ~800ms ⏳
+    STT-->>WS: text
+    WS->>RAG: retrieve(text)
+    Note over RAG: ~200ms ⏳ (embedding + FAISS)
+    RAG-->>WS: context
+    WS->>Agent: get_response(text, context)
+    Note over Agent: ~400ms ⏳
+    Agent-->>WS: response text
+    WS->>TTS: synthesize_speech(sentence_1)
+    Note over TTS: ~600ms per sentence ⏳
+    TTS-->>WS: audio chunk 1
+    WS->>TTS: synthesize_speech(sentence_2)
+    Note over TTS: ~600ms per sentence ⏳
+    TTS-->>WS: audio chunk 2
+    WS-->>Client: All audio chunks
+```
+
+> [!WARNING]
+> **Estimated total latency: 2,500ms – 5,000ms+ per voice query.** Everything runs sequentially. The TTS sentence loop is particularly painful — each sentence makes a separate API call to Gemini TTS.
+
+---
+
+### 3. TTS Sentence-by-Sentence API Calls — N × 600ms
+
+In [websocket_handler.py L389-416](file:///e:/Downloads/AIVA---3D-AI-Model-Backend-main/server/websocket_handler.py#L389-L416), the response text is split into sentences and **each sentence triggers an independent Gemini TTS API call**:
+
+```python
+for i, sentence in enumerate(sentences):
+    tts_result = await audio_manager.process_text_to_audio(
+        text=sentence, ...
+    )
+```
+
+A 3-sentence response = 3 sequential API calls = ~1,800ms just for TTS.
+
+---
+
+### 4. Gemini Embedding for Every Query — Sync + Network Bound
+
+In [retriever.py L62-70](file:///e:/Downloads/AIVA---3D-AI-Model-Backend-main/rag_faiss/retriever.py#L62-L70), every query calls `genai.embed_content()` synchronously. This is a network round-trip to Google's API on every single query.
+
+---
+
+### 5. New Gemini Client Per TTS Call
+
+In [tts.py L37-43](file:///e:/Downloads/AIVA---3D-AI-Model-Backend-main/audio/tts.py#L37-L43):
+```python
+def _get_client(self):
+    api_key = get_gemini_tts_key()
+    return genai.Client(api_key=api_key)  # New client every time!
+```
+
+> [!WARNING]
+> A new `genai.Client()` is instantiated on every single TTS call. Client creation includes SSL/TLS handshake overhead. With sentence-level streaming, this means **N new clients per response**.
+
+---
+
+### 6. run_in_executor Without Thread Pool
+
+Both STT and TTS use `loop.run_in_executor(None, ...)` which uses Python's default `ThreadPoolExecutor`. The default pool is limited and shared globally — under concurrent requests, this becomes a bottleneck.
+
+---
+
+### 7. STT Post-Processor Imported But Never Used
+
+[stt.py L11](file:///e:/Downloads/AIVA---3D-AI-Model-Backend-main/audio/stt.py#L11) imports `get_stt_post_processor` but never calls it. The `stt_post_processor.py` module (which uses Llama 3.1 8B for STT correction) exists but is dead code. This is a wasted component.
+
+---
+
+### 8. Groq Client Not Reused Properly (STT)
+
+In [stt.py L23-31](file:///e:/Downloads/AIVA---3D-AI-Model-Backend-main/audio/stt.py#L23-L31):
+```python
+def _get_client(self) -> Groq:
+    api_key = get_groq_stt_key()
+    if self._client is None:
+        self._client = Groq(api_key=api_key)
+    return self._client
+```
+
+The client is cached but the API key is fetched every time (wasteful). Worse, if the key rotates, the cached client will still use the old key.
+
+---
+
+## 🟡 Moderate Issues
+
+### 9. WebSocket Message Handling is Broken
+
+[websocket_handler.py L20-31](file:///e:/Downloads/AIVA---3D-AI-Model-Backend-main/server/websocket_handler.py#L20-L31) — The receive logic uses bare `except:` with nested try/except, which is deeply fragile:
+
+```python
+try:
+    data = await ws.receive_text()
+except:      # ← catches EVERYTHING, including CancelledError
+    try:
+        binary_data = await ws.receive_bytes()
+    except:  # ← same problem
+        message = await ws.receive_json()
+```
+
+This can silently swallow errors and cause unpredictable behavior.
+
+### 10. No Connection or Request-Level Concurrency
+
+The WebSocket handler processes one message at a time per connection. If a voice query is in-flight, the client can't send another query or cancel the current one.
+
+### 11. Audio Validation is Superficial
+
+[stt.py L167-201](file:///e:/Downloads/AIVA---3D-AI-Model-Backend-main/audio/stt.py#L167-L201) checks file headers but doesn't validate audio duration, sample rate, or channel count — malformed audio will fail silently deeper in the pipeline.
+
+---
+
+## 🟢 What's Already Good
+
+| Aspect | Assessment |
+|--------|------------|
+| FAISS HNSW with pre-loaded index | ✅ Excellent — sub-50ms retrieval |
+| Pickle caching for chunks | ✅ Good — avoids re-reading files |
+| Sentence-level TTS streaming concept | ✅ Right idea — sends text to client immediately |
+| API key rotation | ✅ Good for rate limit management |
+| Groq for LLM (`llama-3.1-8b-instant`) | ✅ Fastest inference option available |
+| Text response sent before audio | ✅ Great UX — user sees text immediately |
+
+---
+
+## 📊 Estimated Latency Breakdown (Current)
+
+| Stage | Typical Latency | Notes |
+|-------|----------------|-------|
+| Audio decode/validate | ~5ms | Negligible |
+| **STT Pass 1** (Groq Whisper) | **500-800ms** | Network + inference |
+| **STT Pass 2** (Tamil re-transcribe) | **+500-800ms** | Only for Tamil — doubles time |
+| RAG embedding (Gemini API) | **100-300ms** | Network round-trip |
+| FAISS search | **<5ms** | In-memory HNSW |
+| **LLM Agent** (Groq Llama 8B) | **300-600ms** | Network + inference |
+| **TTS per sentence** (Gemini) | **400-800ms** × N | N = number of sentences |
+| Base64 encoding | ~10ms | CPU-bound |
+| **Total (English, 3 sentences)** | **≈ 2,500-4,000ms** | |
+| **Total (Tamil, 3 sentences)** | **≈ 3,000-5,000ms** | Tamil adds double-STT |
+
+---
+
+## 🚀 Recommended Improvements (Priority Ordered)
+
+### Priority 1: Eliminate Double-Pass STT
+
+**Replace** the double-pass Tamil detection with Groq Whisper's native language detection:
+
+```python
+# BEFORE: Two API calls
+transcript = client.audio.transcriptions.create(..., language="en")  # Pass 1
+# ... check tamil patterns ...
+transcript = client.audio.transcriptions.create(..., language="ta")  # Pass 2
+
+# AFTER: Single API call with auto-detection
+transcript = client.audio.transcriptions.create(
+    file=audio_file,
+    model="whisper-large-v3-turbo",
+    response_format="verbose_json",
+    # Don't force language — let Whisper auto-detect
+    temperature=0.0
+)
+detected_lang = transcript.language  # Whisper returns detected language
+```
+
+**Impact:** Cuts STT latency by **50%** for Tamil queries (saves 500-800ms).
+
+---
+
+### Priority 2: Parallelize RAG Embedding + FAISS
+
+Start the RAG embedding call **concurrently** with STT post-processing:
+
+```python
+# Run STT and start preparing for RAG in parallel where possible
+stt_result = await stt_processor.transcribe_audio(audio_data)
+text = stt_result["text"]
+
+# Run RAG and agent prep concurrently
+import asyncio
+rag_task = asyncio.create_task(
+    asyncio.get_event_loop().run_in_executor(None, retrieve, text)
+)
+# ... any STT post-processing ...
+rag_result = await rag_task
+```
+
+**Impact:** Saves 100-300ms by overlapping RAG with post-processing.
+
+---
+
+### Priority 3: Batch TTS or Use Streaming TTS API
+
+**Option A — Send full text to Gemini TTS** (eliminate per-sentence calls):
+
+Instead of splitting into sentences and making N API calls, send the entire response as one TTS call. The frontend can start playing while the audio streams.
+
+**Option B — Use `generate_content_stream` for TTS**:
+
+```python
+# Stream TTS response instead of waiting for full generation
+response = client.models.generate_content_stream(
+    model="gemini-2.5-flash-preview-tts",
+    contents=text,
+    config=types.GenerateContentConfig(
+        response_modalities=["AUDIO"],
+        speech_config=types.SpeechConfig(...)
+    ),
+)
+for chunk in response:
+    # Send each PCM chunk immediately
+    audio_chunk = chunk.candidates[0].content.parts[0].inline_data.data
+    await ws.send_bytes(pcm_to_wav(audio_chunk))
+```
+
+**Impact:** Reduces TTS from N×600ms to ~600-800ms total. First audio chunk arrives in ~200ms.
+
+---
+
+### Priority 4: Cache Gemini TTS Client
+
+```python
+class TTSProcessor:
+    def __init__(self):
+        self._client = None
+        self._current_key = None
+    
+    def _get_client(self):
+        api_key = get_gemini_tts_key()
+        if self._client is None or api_key != self._current_key:
+            self._client = genai.Client(api_key=api_key)
+            self._current_key = api_key
+        return self._client
+```
+
+**Impact:** Eliminates client creation overhead (SSL handshake) on every call.
+
+---
+
+### Priority 5: Use a Dedicated Thread Pool
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+# Create dedicated pools for audio processing
+stt_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="stt")
+tts_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tts")
+
+# Use dedicated pool instead of default
+result = await loop.run_in_executor(stt_executor, self._transcribe_bytes, ...)
+```
+
+**Impact:** Prevents thread starvation under concurrent load.
+
+---
+
+### Priority 6: Fix WebSocket Message Handling
+
+Replace the broken nested try/except with proper Starlette message handling:
+
+```python
+@router.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    while True:
+        message = await ws.receive()
+        if message["type"] == "websocket.receive":
+            if "text" in message:
+                await handle_text_message(ws, message["text"])
+            elif "bytes" in message:
+                await handle_binary_message(ws, message["bytes"])
+        elif message["type"] == "websocket.disconnect":
+            break
+```
+
+---
+
+### Priority 7: Activate STT Post-Processor (Conditionally)
+
+The `stt_post_processor.py` is good code but unused. Wire it in **selectively** — only for low-confidence transcriptions:
+
+```python
+if stt_result["confidence"] < 0.85:
+    corrected = await post_processor.process_stt_corrections(stt_result["text"])
+    stt_result["text"] = corrected["corrected_text"]
+```
+
+**Impact:** Improves accuracy for ambiguous queries without adding latency to clear ones.
+
+---
+
+## 🔮 Extensions & Upgrades
+
+### 1. Switch to Deepgram for STT (Real-Time Streaming)
+
+Deepgram offers **WebSocket-based streaming STT** with ~100ms interim results:
+
+```
+Groq Whisper: Send full audio → wait → get transcript (500-800ms)
+Deepgram:     Stream audio chunks → get interim results in real-time (~100ms)
+```
+
+This lets you start RAG retrieval **before the user finishes speaking**.
+
+### 2. Replace Web Speech API TTS with Server-Side Streaming
+
+Your `overview.md` mentions the frontend uses **Web Speech API for TTS**. If that's still the case, consider:
+- Web Speech API is browser-dependent, low quality, and unpredictable
+- Your Gemini TTS backend produces superior audio — make sure the frontend actually uses it
+
+### 3. LLM Streaming for Agent Response
+
+Use Groq's streaming mode to start TTS as soon as the first sentence is generated:
+
+```python
+response = client.chat.completions.create(
+    model="llama-3.1-8b-instant",
+    messages=[...],
+    stream=True  # ← Enable streaming
+)
+for chunk in response:
+    text_delta = chunk.choices[0].delta.content
+    # As soon as a full sentence is detected, fire TTS for that sentence
+```
+
+This overlaps LLM generation with TTS, potentially saving 200-400ms.
+
+### 4. TTS Audio Caching
+
+Cache frequently requested responses (common questions about fees, hostels, etc.):
+
+```python
+import hashlib
+
+def get_tts_cache_key(text: str, voice: str, language: str) -> str:
+    return hashlib.md5(f"{text}:{voice}:{language}".encode()).hexdigest()
+```
+
+### 5. Pre-Warm Common Queries
+
+At startup, pre-compute embeddings for the top 20-30 most common queries and cache the FAISS results.
+
+### 6. Add Audio Compression
+
+Currently sending WAV (uncompressed) over WebSocket. Switch to **Opus** or **MP3** for 5-10× smaller payloads:
+
+```
+WAV (1 second, 24kHz, 16-bit mono): ~48KB
+Opus (1 second, same quality):      ~5-8KB
+```
+
+### 7. WebSocket Binary Frames for Audio
+
+Instead of base64-encoding audio into JSON (33% overhead), send audio as binary WebSocket frames:
+
+```python
+# BEFORE: base64 in JSON (~33% larger)
+audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+await ws.send_json({"audio_data": audio_base64, ...})
+
+# AFTER: binary frame (exact size)
+await ws.send_bytes(audio_data)
+```
+
+---
+
+## 📋 Summary: Quick Wins vs. Major Upgrades
+
+| Change | Effort | Latency Savings | Priority |
+|--------|--------|----------------|----------|
+| Eliminate double-pass STT | Low | **-500-800ms** (Tamil) | 🔴 P1 |
+| Cache TTS client | Very Low | **-50-100ms** per call | 🔴 P1 |
+| Single TTS call (full text) | Low | **-600-1200ms** | 🔴 P1 |
+| Fix WebSocket message handling | Low | Reliability fix | 🟡 P2 |
+| Dedicated thread pools | Low | Concurrency fix | 🟡 P2 |
+| Activate STT post-processor | Medium | Accuracy improvement | 🟡 P2 |
+| LLM streaming + pipeline overlap | Medium | **-200-400ms** | 🟢 P3 |
+| Deepgram streaming STT | High | **-300-600ms** | 🟢 P3 |
+| Audio compression (Opus) | Medium | Bandwidth -80% | 🟢 P3 |
+| Binary WebSocket frames | Low | Bandwidth -33% | 🟢 P3 |
+| TTS response caching | Medium | **-600ms** (cache hits) | 🟢 P3 |
+
+> [!IMPORTANT]
+> **Implementing just P1 changes can reduce end-to-end voice latency from ~3-5 seconds to ~1.5-2.5 seconds** — making the experience feel dramatically more conversational.
