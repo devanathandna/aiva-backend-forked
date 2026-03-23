@@ -45,29 +45,52 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     return chunks
 
 
-EMBED_URL = f"https://generativelanguage.googleapis.com/v1beta/{EMBEDDING_MODEL}:embedContent"
+BATCH_EMBED_URL = f"https://generativelanguage.googleapis.com/v1beta/{EMBEDDING_MODEL}:batchEmbedContents"
 
 
-def _embed_single(text: str) -> List[float]:
-    """Embed a single text using the Gemini REST API."""
-    resp = requests.post(
-        EMBED_URL,
-        params={"key": GEMINI_API_KEY},
-        json={"content": {"parts": [{"text": text}]}},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["embedding"]["values"]
-
-
-def _embed_texts(texts: List[str]) -> np.ndarray:
+def _embed_texts(texts: List[str], batch_size: int = 100) -> np.ndarray:
     vecs: List[List[float]] = []
-    for i, t in enumerate(texts):
-        vecs.append(_embed_single(t))
-        # Gemini free tier rate limit: ~1500 RPM, add small delay to be safe
-        if (i + 1) % 50 == 0:
-            print(f"  [embed] {i + 1}/{len(texts)} done, pausing briefly...")
-            time.sleep(1)
+    
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        
+        requests_payload = []
+        for text in batch:
+            requests_payload.append({
+                "model": EMBEDDING_MODEL,
+                "content": {
+                    "parts": [{"text": text}]
+                }
+            })
+            
+        payload = {"requests": requests_payload}
+        
+        retry_count = 0
+        while retry_count < 3:
+            resp = requests.post(
+                BATCH_EMBED_URL,
+                params={"key": GEMINI_API_KEY},
+                json=payload,
+                timeout=30,
+            )
+            
+            if resp.status_code == 429:
+                print(f"  [embed] Rate limited on batch {i//batch_size}. Retrying in 10s...")
+                time.sleep(10)
+                retry_count += 1
+                continue
+                
+            resp.raise_for_status()
+            data = resp.json()
+            
+            for embedding_obj in data.get("embeddings", []):
+                vecs.append(embedding_obj["values"])
+                
+            break
+            
+        print(f"  [embed] {min(i + batch_size, len(texts))}/{len(texts)} texts batched and embedded.")
+        time.sleep(2)  # Small delay between batches
+        
     arr = np.asarray(vecs, dtype=np.float32)
     faiss.normalize_L2(arr)
     return arr
