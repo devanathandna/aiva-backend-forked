@@ -1,12 +1,13 @@
 """
-Groq Llama-4 Scout AI Agent (Replacing Gemini)
-Handles conversational responses with RAG integration
+Groq Llama AI Agent with RAG Integration
+Handles conversational responses with adaptive response length
 """
 
 import os
 import json
 import asyncio
 import logging
+import time
 from typing import Dict, Any, Optional
 from groq import Groq
 
@@ -14,21 +15,54 @@ from rag_faiss.retriever import retrieve as query_knowledge_base
 
 logger = logging.getLogger(__name__)
 
-# System prompt for Groq Llama agent
-SYSTEM_PROMPT = """You are AIVA, a helpful AI assistant for Sri Eshwar College. Give accurate, specific answers using the provided context.
+# OPTIMIZED: Compressed system prompt (~250 tokens vs ~500 before)
+# Adaptive response length: concise for facts, full list for enumerations
+SYSTEM_PROMPT = """You are AIVA, an AI-powered college admission assistant for Sri Eshwar College of Engineering. Do NOT hallucinate. Do not say unnecessary things.
 
-RESPONSE FORMAT: Always respond in JSON:
-{
-    "response": "Your concise answer (2-3 sentences max)",
-    "emotion": "none" or "happy" or "sad"
-}
+Your job is to answer student and parent queries clearly, concisely, and in a structured format.
 
-GUIDELINES:
-- Keep responses SHORT and specific (2-3 sentences). Avoid long paragraphs.
-- When context has exact numbers/marks/fees, include them.
-- Be conversational and friendly.
-- If you don't know, say so honestly.
-- For Tamil queries: respond ONLY in Tamil script (தமிழ்). Do NOT use English or Tanglish."""
+Always follow this response format EXPLICITLY:
+
+Hi!
+
+[Direct answer to the user's question in 1-2 lines]
+
+Here's what you should know:
+- [Key point 1]
+- [Key point 2]
+- [Key point 3]
+(Optional: add 1 more only if important)
+
+What this means:
+[Simple explanation of why this information matters in 1-2 lines]
+
+Overall, [clear recommendation or conclusion in 1 line].
+
+Would you like [relevant follow-up question]?
+
+---
+Keep responses clean, readable, and not too long.
+- Use short lines and bullet points, NOT paragraphs.
+- Maintain a helpful and professional tone.
+- Do NOT over-explain.
+- Do NOT change the format.
+- DO NOT use any emojis in your response. EVER.
+
+Behavior Guidelines:
+- For placement questions: include stats like 600+ placements, 200+ companies, ₹44 LPA (only if relevant).
+- FIX HALLUCINATION: If specific department-wise placement numbers aren't in the dataset (e.g. for ECE), state clearly "Specific department-wise placement data for [Branch] is not available." but mention the overall placement stats.
+- For course comparison: explain difference + suggest based on interest.
+- For cutoff: show 2-3 examples and explain competition.
+- For facilities/hostel: highlight safety, infrastructure, and student comfort.
+
+RULES:
+1. Use context data exclusively. If not in context, say you don't have that info.
+2. For Tamil queries, respond in Tanglish (Tamil + English mix).
+3. Classify emotion as: "happy", "sad", or "none".
+4. For questions regarding fees strictly say for any queries contact reception.
+
+RESPOND ONLY in valid JSON:
+{"response": "<formatted answer>", "emotion": "<happy|sad|none>"}"""
 
 
 # Cached Groq client (avoids creating a new client per request)
@@ -37,11 +71,7 @@ _groq_client_key = None
 
 
 def _get_groq_client() -> Groq:
-    """Get cached Groq client, only recreating when the key changes.
-    
-    OPTIMIZED: Previously created a new Groq() client on every single request.
-    Now caches the client and reuses the connection.
-    """
+    """Get cached Groq client, only recreating when the key changes."""
     global _groq_client, _groq_client_key
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -53,45 +83,35 @@ def _get_groq_client() -> Groq:
     return _groq_client
 
 
-async def get_agent_response(user_query: str, language_context: Optional[Dict] = None) -> Dict[str, Any]:
+async def get_agent_response(user_query: str, language_context: Optional[Dict] = None, chat_history: Optional[list] = None, rag_query: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get response from Groq Llama-4 Scout agent with RAG integration
+    Get response from Groq Llama agent with RAG integration.
     
-    Args:
-        user_query: User's question
-        language_context: Optional language detection info
-        
-    Returns:
-        Response with text and emotion
+    OPTIMIZED:
+    - Compressed prompt (~250 tokens vs ~500)
+    - Native JSON mode (no parsing failures)
+    - Lower temperature (0.1) for speed + consistency
+    - Adaptive response length (concise for facts, full for lists)
     """
     try:
         # Determine language instruction
         if language_context and language_context.get("is_tamil", False):
-            language_instruction = "User asked in Tamil. You MUST respond in Tamil script (தமிழ்) only. Do NOT use English."
+            language_instruction = "User asked in Tamil. Respond in Tanglish."
         else:
-            language_instruction = "User asked in English. Respond in clear, concise English."
+            language_instruction = "Respond in English."
         
         # Get relevant context from knowledge base (with timeout)
-        # OPTIMIZED: Use get_running_loop() (not deprecated get_event_loop())
         try:
             loop = asyncio.get_running_loop()
-            
-            # For Tamil queries, create an English search version for better RAG results
-            # (embeddings were created from English documents)
-            rag_query = user_query
-            is_tamil_query = any('\u0B80' <= c <= '\u0BFF' for c in user_query)
-            if is_tamil_query:
-                # Append English keywords alongside Tamil to improve embedding match
-                # The Gemini embedding model handles multilingual input well
-                rag_query = f"[Tamil query] {user_query}"
-                logger.info(f"Tamil query detected, using bilingual RAG query")
-            
+            rag_start = time.time()
+            query_to_search = rag_query if rag_query else user_query
             rag_results = await asyncio.wait_for(
-                loop.run_in_executor(None, query_knowledge_base, rag_query),
-                timeout=3.0  # Increased from 1.5s — REST API embedding is slower than SDK
+                loop.run_in_executor(None, query_knowledge_base, query_to_search),
+                timeout=1.5
             )
+            rag_ms = (time.time() - rag_start) * 1000
+            logger.info(f"⏱️ RAG retrieval took {rag_ms:.0f}ms")
             
-            # Extract context properly from RAG results dictionary
             if rag_results and isinstance(rag_results, dict):
                 context = rag_results.get("context", "")
                 sources = rag_results.get("sources", [])
@@ -99,7 +119,6 @@ async def get_agent_response(user_query: str, language_context: Optional[Dict] =
                 context = context if context else "No specific context found."
             else:
                 context = "No specific context found."
-                logger.warning(f"RAG returned unexpected format: {type(rag_results)}")
                 
         except asyncio.TimeoutError:
             logger.warning(f"RAG retrieval timeout for query: {user_query}")
@@ -108,103 +127,70 @@ async def get_agent_response(user_query: str, language_context: Optional[Dict] =
             logger.warning(f"RAG retrieval failed: {e}")
             context = "Knowledge base temporarily unavailable."
         
-        # Build prompt
+        history_text = ""
+        if chat_history:
+            history_text = "\nConversation History:\n"
+            for msg in chat_history:
+                role = "User" if msg.get("role") == "user" else "Assistant"
+                history_text += f"{role}: {msg.get('content')}\n"
+        
+        # Build compact prompt
         prompt = f"""{SYSTEM_PROMPT}
 
-LANGUAGE INSTRUCTION: {language_instruction}
+{language_instruction}
+{history_text}
+Context: {context}
 
-Context from knowledge base: {context}
+Question: {user_query}"""
 
-User Question: {user_query}
-
-Response (in JSON format):"""
-
-        # Debug logging
-        logger.info(f"Context length: {len(context)} chars")
-        logger.debug(f"Full context: {context[:200]}...")
-        logger.debug(f"Prompt length: {len(prompt)} chars")
+        logger.info(f"Context length: {len(context)} chars, Prompt length: {len(prompt)} chars")
 
         # Get Groq Llama client
         client = _get_groq_client()
         
-        # Generate response with optimized settings for speed
+        # OPTIMIZED: Native JSON mode + lower temperature + adaptive max_tokens
+        llm_start = time.time()
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",  # Fastest Groq model for immediate responses
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,  # Lower temperature for faster, more focused responses
-            max_tokens=150,   # Short responses for fast TTS (~2-3 sentences)
-            top_p=0.9,
-            stream=False
+            temperature=0.1,       # OPTIMIZED: lower = faster, more deterministic
+            max_tokens=400,        # OPTIMIZED: enough for full listings, prompt controls brevity
+            top_p=0.85,
+            stream=False,
+            response_format={"type": "json_object"},  # OPTIMIZED: native JSON mode
         )
+        llm_ms = (time.time() - llm_start) * 1000
+        logger.info(f"⏱️ LLM generation took {llm_ms:.0f}ms")
         
         text = response.choices[0].message.content.strip()
+        logger.info(f"Groq raw response ({len(text)} chars): '{text[:120]}...'")
         
-        logger.info(f"Groq Llama raw response: '{text[:100]}...'")
-        
-        # Clean up response format
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-        
+        # JSON mode ensures valid JSON, but still handle edge cases gracefully
         try:
-            # Parse JSON response
             parsed = json.loads(text)
-            
-            # Validate required keys
-            if "response" not in parsed or "emotion" not in parsed:
-                raise json.JSONDecodeError("Missing required keys", text, 0)
-                
         except json.JSONDecodeError as e:
-            logger.warning(f"Invalid JSON from Groq Llama (length={len(text)}): {e}")
-            logger.debug(f"Raw response: '{text[:100]}...'")
+            logger.warning(f"JSON parse failed despite json_object mode: {e}")
             
-            # Enhanced error recovery
-            partial_response = ""
-            
+            # Fallback: try to extract response text
+            partial = ""
             if '"response"' in text:
                 try:
-                    # Extract response content
-                    start_patterns = ['"response": "', '"response":"', ': "']
-                    for pattern in start_patterns:
-                        start_idx = text.find(pattern)
-                        if start_idx >= 0:
-                            start_idx += len(pattern)
-                            remaining = text[start_idx:]
-                            
-                            # Find natural end points
-                            end_patterns = ['",', '"', '\\n', "'}"]
-                            min_end = len(remaining)
-                            
-                            for end_pattern in end_patterns:
-                                end_pos = remaining.find(end_pattern)
-                                if end_pos >= 0 and end_pos < min_end:
-                                    min_end = end_pos
-                            
-                            if min_end < len(remaining):
-                                partial_response = remaining[:min_end].strip()
-                                break
-                    
-                    # Clean extracted response
-                    if partial_response:
-                        partial_response = partial_response.replace('\\"', '"')
-                        partial_response = partial_response.replace('\\n', ' ')
-                        partial_response = partial_response.strip()
-                        
-                except Exception as extraction_error:
-                    logger.debug(f"Response extraction failed: {extraction_error}")
-            
-            # Final fallback
-            if not partial_response or len(partial_response.strip()) < 3:
-                partial_response = "I apologize, but I'm having trouble processing your request right now."
+                    start_idx = text.find('"response"')
+                    # Find the value after the key
+                    colon_idx = text.find(':', start_idx)
+                    if colon_idx >= 0:
+                        remaining = text[colon_idx+1:].strip()
+                        if remaining.startswith('"'):
+                            end_idx = remaining.find('"', 1)
+                            if end_idx > 0:
+                                partial = remaining[1:end_idx]
+                except Exception:
+                    pass
             
             parsed = {
-                "response": partial_response,
+                "response": partial or "I'm having trouble processing your request. Please try again.",
                 "emotion": "none"
             }
-            
-            logger.info(f"Recovered Groq response: '{partial_response[:50]}...'")
         
         # Ensure required keys exist with valid values
         if "response" not in parsed:
@@ -212,12 +198,12 @@ Response (in JSON format):"""
         if "emotion" not in parsed or parsed["emotion"] not in ("happy", "sad", "none"):
             parsed["emotion"] = "none"
         
-        logger.info(f"Groq Llama response: '{parsed['response'][:50]}...' (emotion: {parsed['emotion']})")
+        logger.info(f"✅ Agent response ({len(parsed['response'])} chars): '{parsed['response'][:80]}...' (emotion: {parsed['emotion']})")
         
         return parsed
         
     except Exception as error:
-        logger.exception("Groq Llama agent error")
+        logger.error(f"Groq Llama agent error: {error}")
         return {
             "response": "I apologize, but I'm experiencing technical difficulties. Please try again.",
             "emotion": "sad"

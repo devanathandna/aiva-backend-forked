@@ -13,6 +13,7 @@ DATA_DIR = os.path.join(BASE_DIR, "rag_faiss", "data")
 
 KNOWLEDGE_FILES = {
     "Achievements": os.path.join(BASE_DIR, "Achievements.txt"),
+    "Admissions": os.path.join(BASE_DIR, "Admissions.txt"),
     "Cutoffs": os.path.join(BASE_DIR, "Cutoffs.txt"),
     "Dataset": os.path.join(BASE_DIR, "Dataset.txt"),
     "Departments": os.path.join(BASE_DIR, "Departments.txt"),
@@ -30,8 +31,9 @@ FAISS_INDEX_PATH = os.path.join(EMBEDDINGS_DIR, "faiss_index.bin")
 INDEX_MAP_PATH = os.path.join(EMBEDDINGS_DIR, "index_map.pkl")
 
 # ── Chunking ─────────────────────────────────────────────────────────
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 50
+# OPTIMIZED: Smaller chunks = more precise retrieval, more overlap = no info loss
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 100
 
 # ── FAISS HNSW tuning ────────────────────────────────────────────────
 HNSW_M = 40
@@ -39,7 +41,8 @@ HNSW_EF_CONSTRUCTION = 200
 HNSW_EF_SEARCH = 64
 
 # ── Retrieval defaults ───────────────────────────────────────────────
-TOP_K = 5
+# OPTIMIZED: Fewer results = less noise in LLM context, faster generation
+TOP_K = 3
 
 # ── Gemini embedding model ───────────────────────────────────────────
 EMBEDDING_MODEL = "models/gemini-embedding-001"

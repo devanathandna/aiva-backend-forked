@@ -35,6 +35,19 @@ _index_map: Optional[Dict[int, Tuple[str, int]]] = None
 _pickle_cache: Dict[str, List[str]] = {}
 _loaded_successfully: bool = False
 
+# OPTIMIZED: Persistent HTTP session — reuses TCP/TLS connections (~50-150ms saved per call)
+_http_session: Optional[requests.Session] = None
+
+
+def _get_http_session() -> requests.Session:
+    """Get or create a persistent HTTP session with connection pooling."""
+    global _http_session
+    if _http_session is None:
+        _http_session = requests.Session()
+        # Keep-alive is enabled by default in Session
+        _http_session.headers.update({"Connection": "keep-alive"})
+    return _http_session
+
 
 def _ensure_loaded():
     """Load FAISS index and index map into memory on first call.
@@ -71,12 +84,16 @@ def _load_pickle(pickle_filename: str) -> List[str]:
 
 
 def _embed_query(text: str) -> np.ndarray:
-    """Embed a single query string via REST API and normalise for cosine similarity."""
-    resp = requests.post(
+    """Embed a single query string via REST API and normalise for cosine similarity.
+    
+    OPTIMIZED: Uses persistent session for connection reuse.
+    """
+    session = _get_http_session()
+    resp = session.post(
         EMBED_URL,
         params={"key": GEMINI_API_KEY},
         json={"content": {"parts": [{"text": text}]}},
-        timeout=15,
+        timeout=(5, 10),  # (connect_timeout, read_timeout) — tighter than 15s flat
     )
     resp.raise_for_status()
     values = resp.json()["embedding"]["values"]

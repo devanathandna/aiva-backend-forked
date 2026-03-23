@@ -17,33 +17,62 @@ def _get_gemini_client():
     return genai.GenerativeModel("gemini-2.5-flash")
 
 SYSTEM_PROMPT = """\
-You are AIVA, an AI assistant answering questions about college information using provided context.
+You are AIVA, an AI-powered college admission assistant for Sri Eshwar College of Engineering. Do NOT hallucinate. Do not say unnecessary things.
+
+Your job is to answer student and parent queries clearly, concisely, and in a structured format.
+
+Always follow this response format EXPLICITLY:
+
+Hi!
+
+[Direct answer to the user's question in 1-2 lines]
+
+Here's what you should know:
+- [Key point 1]
+- [Key point 2]
+- [Key point 3]
+(Optional: add 1 more only if important)
+
+What this means:
+[Simple explanation of why this information matters in 1-2 lines]
+
+Overall, [clear recommendation or conclusion in 1 line].
+
+Would you like [relevant follow-up question]?
+
+---
+Keep responses clean, readable, and not too long.
+- Use short lines and bullet points, NOT paragraphs.
+- Maintain a helpful and professional tone.
+- Do NOT over-explain.
+- Do NOT change the format.
+- DO NOT use any emojis in your response. EVER.
+
+Behavior Guidelines:
+- For placement questions: include stats like 600+ placements, 200+ companies, ₹44 LPA (only if relevant).
+- FIX HALLUCINATION: If specific department-wise placement numbers aren't in the dataset (e.g. for ECE), state clearly "Specific department-wise placement data for [Branch] is not available." but mention the overall placement stats.
+- For course comparison: explain difference + suggest based on interest.
+- For cutoff: show 2-3 examples and explain competition.
+- For facilities/hostel: highlight safety, infrastructure, and student comfort.
 
 RULES:
-
-Use ONLY the given context.
-
-If the answer is not in the context, say you don't have that information.
-
-Keep answers concise and professional.
-
-Classify the response emotion as exactly one of: happy, sad, none.
-
-If the input mixes Tamil and English, reply using both.
-
-Limit the response to 200 characters.
+1. Use ONLY the given context. If the answer is not in the context, say you don't have that information.
+2. If the input mixes Tamil and English, reply using both (Tanglish).
+3. Classify the response emotion as exactly one of: happy, sad, none.
+4. Keep answers professional.
 
 Respond ONLY in valid JSON with this schema:
 {
-"response":"<answer>",
+"response":"<formatted answer>",
 "emotion":"<happy|sad|none>"
 }
 """
 
 
-async def get_agent_response(user_query: str, language_context: dict = None) -> dict:
+async def get_agent_response(user_query: str, language_context: dict = None, chat_history: list = None, rag_query: str = None) -> dict:
     """Retrieve context from ChromaDB, send to Gemini, and return structured response."""
-    retrieval = query_knowledge_base(user_query)
+    query_to_search = rag_query if rag_query else user_query
+    retrieval = query_knowledge_base(query_to_search)
     context = retrieval["context"]
     sources = ", ".join(retrieval["sources"]) if retrieval["sources"] else "None"
 
@@ -57,11 +86,18 @@ async def get_agent_response(user_query: str, language_context: dict = None) -> 
         language_instruction = "IMPORTANT: User spoke in Tamil. You MUST respond in Tamil + English mix (Tanglish). Use Tamil words but keep technical terms in English."
     else:
         language_instruction = "User spoke in English. Respond completely in English."
+        
+    history_text = ""
+    if chat_history:
+        history_text = "\nConversation History:\n"
+        for msg in chat_history:
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            history_text += f"{role}: {msg.get('content')}\n"
 
     prompt = f"""{SYSTEM_PROMPT}
 
 LANGUAGE INSTRUCTION: {language_instruction}
-
+{history_text}
 Context: {context}
 
 Question: {user_query}

@@ -35,27 +35,21 @@ class AudioManager:
         """
         Process audio input to text
         
-        Args:
-            audio_data: Raw audio bytes
-            language: Expected language ("en", "ta")
-            
-        Returns:
-            Transcription result with confidence and language detection
+        OPTIMIZED: Removed redundant validate_audio_format() — Groq Whisper 
+        handles format detection internally via filename extension sniffing.
         """
         try:
-            # Validate audio format first
-            validation = await self.stt_processor.validate_audio_format(audio_data)
-            if not validation["valid"]:
+            if len(audio_data) < 1000:
                 return {
                     "success": False,
-                    "error": f"Invalid audio format: {validation.get('error', 'Unknown')}",
+                    "error": "Audio data too small (< 1KB)",
                     "text": "",
                     "confidence": 0.0
                 }
             
-            logger.info(f"Processing audio: {validation['format']}, {validation['size']} bytes")
+            logger.info(f"Processing audio: {len(audio_data)} bytes")
             
-            # Transcribe audio
+            # Transcribe audio directly (Whisper handles format detection)
             result = await self.stt_processor.transcribe_audio(audio_data, language)
             
             if result["success"]:
