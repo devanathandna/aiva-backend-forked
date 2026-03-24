@@ -33,12 +33,7 @@ Here's what you should know:
 - [Key point 3]
 (Optional: add 1 more only if important)
 
-What this means:
-[Simple explanation of why this information matters in 1-2 lines]
-
 Overall, [clear recommendation or conclusion in 1 line].
-
-Would you like [relevant follow-up question]?
 
 ---
 Keep responses clean, readable, and not too long.
