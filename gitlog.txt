@@ -1,0 +1,29 @@
+﻿commit 364a0d94ab162682f719d77446ccaebc3b0c2326
+Author: Hrithick <hrithick2503@gmail.com>
+Date:   Tue Mar 24 16:34:58 2026 +0530
+
+    changed format for responses
+
+commit cba935974e7737c6ac8fbc8906a03b1b360e16d8
+Author: Hrithick <hrithick2503@gmail.com>
+Date:   Mon Mar 23 20:54:22 2026 +0530
+
+    changed index build
+
+commit 4b7e0a21d64769341f08830b6ad5b6cbd85baf9f
+Author: Hrithick <hrithick2503@gmail.com>
+Date:   Mon Mar 23 20:16:49 2026 +0530
+
+    changed build index
+
+commit 7e90b8fb3b8e9dcafd713d6c1948627d352f1f0f
+Author: Hrithick <hrithick2503@gmail.com>
+Date:   Mon Mar 23 16:27:15 2026 +0530
+
+    changed response structure
+
+commit 2e2852d6bdeff510b5e68b81759b8b4adcce38be
+Author: Hrithick <hrithick2503@gmail.com>
+Date:   Sat Mar 14 17:15:33 2026 +0530
+
+    optimized tts

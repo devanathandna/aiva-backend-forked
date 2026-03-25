@@ -21,6 +21,8 @@ KNOWLEDGE_FILES = {
     "Higher_Education": os.path.join(BASE_DIR, "Higher_Education.txt"),
     "Hostel": os.path.join(BASE_DIR, "Hostel.txt"),
     "Overview": os.path.join(BASE_DIR, "Overview.txt"),
+    "Placements": os.path.join(BASE_DIR, "Placements.txt"),
+    "Bus_Details": os.path.join(BASE_DIR, "Bus_Details.txt"),
 }
 
 # ── Persistence paths ────────────────────────────────────────────────

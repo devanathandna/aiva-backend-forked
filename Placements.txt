@@ -1,0 +1,43 @@
+SECE Department-Wise Placement Data 2026
+==========================================
+
+CSE Department (Computer Science and Engineering):
+- Highest Package: 45 LPA
+- Companies Visiting: Philips, CommScope, Microsoft, JustPay, ServiceNow, BP
+- Top recruiters include both product and service-based MNCs.
+
+IT Department (Information Technology):
+- Highest Package: 60 LPA
+- Companies Visiting: Microsoft, JustPay, Amazon, Dell, ServiceNow
+- Highest LPA at SECE belongs to the IT department.
+
+ECE Department (Electronics and Communication Engineering):
+- Highest Package: 23 LPA
+- Companies Visiting: ABB, Cadence, AMD, Multicoreware, Cywar, Caterpillar
+- Strong placements in core electronics and semiconductor domains.
+
+EEE Department (Electrical and Electronics Engineering):
+- Highest Package: 11 LPA
+- Companies Visiting: ABB
+- Placements focused on core electrical companies.
+
+AIDS Department (Artificial Intelligence and Data Science):
+- Highest Package: 44 LPA
+- Companies Visiting: Akaki.ai, ShopUp, SP Plus, Goml, Jocato, Aditya.ai
+- Emerging AI-focused companies driving high packages.
+
+MECH Department (Mechanical Engineering):
+- Highest Package: 23 LPA
+- Companies Visiting: Baker Hughes, Mercedes-Benz, Quest Global, Cameron, Rane, BMW, Renault Nissan, Caterpillar
+- Strong presence from global automotive and oil & gas sector companies.
+
+Overall Placement Statistics 2026:
+- Total students placed: 790+
+- Placement rate: 95%
+- Highest package: Rs.60 LPA (IT Department)
+- Students at Rs.40+ LPA: 7 students
+- Students at Rs.20+ LPA: 20 students
+- Students at Rs.10+ LPA: 100 students
+- Students at Rs.8+ LPA: 150+
+- Total companies: 200+
+- MNCs: 120+

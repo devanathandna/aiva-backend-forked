@@ -1,0 +1,154 @@
+Bus No 1
+
+Boarding Point: Bharathiyar University via Ukkadam @7.00 AM
+Boarding Stages: Bharathiyar University → Vadavalli → Milk Company → Gandhipark → Ukkadam → Sundarapuram → Premier Mills → Kinathukadavu
+
+Bus No 2
+
+Boarding Point: Kottampatti Via Pollachi @7.20 AM
+Boarding Stages: Kottampatti → Pollachi → Cheran Nagar → Kovilpalayam → Thamaraikulam → Kinathukadavu
+
+Bus No 3
+
+Boarding Point: Saravanampatti Via Gandhipuram @7.00 AM
+Boarding Stages: Saravanampatti → Gandhipuram → Thiruvalluvar Bus Stand → Women’s Polytechnic → Nanjundapuram → GD Tank → Chettipalayam → Panapatti Pirivu → Vadasithur
+
+Bus No 4
+
+Boarding Point: Aallandurai Via Kovaipudur @7.00 AM
+Boarding Stages: Aallandurai → Sundakamuthur → Perur → Selvapuram → Puttuviki → Kovaipudur → Madukkarai Quarry Office → Malumichampatti → Kinathukadavu
+
+Bus No 5
+
+Boarding Point: Vadakipalayam Pirivu @7.10 AM
+Boarding Stages: Vadakipalayam Pirivu → Ponnapuram Pirivu → Vadakipalayam → Sulakkal → Chennaiyur → Sulakkal → Roots Company Road → Thamaraikulam → Kinathukadavu
+
+Bus No 6
+
+Boarding Point: Somanur-Sulur @7.00 AM
+Boarding Stages: Somanur → Sulur → Karanampettai → Papampatti Pirivu → Papampatti → Chettipalayam → Vadasithur
+
+Bus No 9
+
+Boarding Point: Tirupur Kovil Vazhi Bus Stand Via Mangalam, Palladam @6.45 AM
+Boarding Stages: Tirupur Kovil Vazhi Bus Stand → Mangalam → 63-Velampalayam → Palladam → GH → Karaidivavi → Sellakarachal → Lakshiyakanpalayam → Panapatti → Vadasithur
+
+Bus No 11
+
+Boarding Point: Dhali Via Negamam @6.45 AM
+Boarding Stages: Kurichikottai → Dhali → Erichanampatti → Kondigiyam → Udukkampalayam → Lakshmapuram → Kedimedu → Singuvadai → Poosaripatti → Negamam → Cheetipudur → Vadasithur
+
+Bus No 12
+
+Boarding Point: Pollachi Via Negamam @7.20 AM
+Boarding Stages: NPT-MCET Pollachi → TheirNilayam → Puliyampatti → Negamam → Vadasithur
+
+Bus No 14
+
+Boarding Point: Jallipatti Via Kattampatti @7.00 AM
+Boarding Stages: Jallipatti → Senjeriputhur → Kamalapatti → S. Ayyampalayam → J. Krishnapuram → Pachagoundampalayam → Senjerimalai → Kattampatti → Mandrampalayam → Vadasithur
+
+Bus No 15
+
+Boarding Point: Pallapalayam Via Bodipatti, Udumalpet, Negamam @7.00 AM
+Boarding Stages: Pallapalayam → Bodipatti → Udumalpet → Kuruncherri → Pethampampatti → Kongal Nagaram → Pudhupalayam → Poosaripatti → Avalpatti → Negamam → Kapplangarai → Vadasithur
+
+Bus No 18
+
+Boarding Point: Avinashi - Thirumuruganpoondi via Kamanaikanpalayam @6.45 AM
+Boarding Stages: Avinashi → Thirumuruganpoondi → Annuparpalayam → Pushpa Theatre → Old Bus Stand → Thennampalayam → Veerapandi → Arulpuram → Palladam → Vadugapalayam → Venkitapuram → Kamanaikkanpalayam → Sulthanpet → Senjeriprivu → Poorandampalayam → Matuvavi → Vadasithur
+
+Bus No 19
+
+Boarding Point: Kalapatti via Hope College @7.00 AM
+Boarding Stages: Kalapatti → Nehrunagar → SITRA → Hope College → Peelamedu → Lakshmi Mills → Puliyakulam → Sungam Bye-pass → Ukkadam → Sundarapuram → Malumichampatti → Kinathukadavu
+
+Bus No 20
+
+Boarding Point: Kottur via NM Sungam, Pollachi @7.00 AM
+Boarding Stages: Angalakurichi → Kottur → Somanthurai → Chitthur → NM Sungam → Samathur → Suleeswaranpatti → Pollachi → Kovilpalayam → Kinathukadavu
+
+Bus No 21
+
+Boarding Point: Kaliyapuram via Pollachi @7.00 AM
+Boarding Stages: Kaliyapuram → Vettaikaranpudur → Annaimalai → Sungam → Ambrampalayam → Uthukuli → Pollachi → Kovilpalayam → Kinathukadavu
+
+Bus No 22
+
+Boarding Point: Vellalore @7.10 AM
+Boarding Stages: Vellalore → ELGI Nagar → Konavaikkalpalayam → GD Tank → Chettipalayam → Thekkani → Karacheri → Vadasithur
+
+Bus No 23
+
+Boarding Point: Vallakundapuram Ramachandrapuram Via Negamam @7.10 AM
+Boarding Stages: Vallakundapuram → Ramachandrapuram → Virigalpatti Pirivu → Udhavipalayam → Negamam → Cheetipudur → Kapplangarai → Devanampalayam → Chettikkapalayam → Cherrapalayam → Kurinallipalayam → Vadasithur
+
+Bus No 24
+
+Boarding Point: Poneri Via Udumalpet, Pollachi @6.50 AM
+Boarding Stages: Poneri → Udumalpet → Mukkonam → Komangalam → Thippampatti → RTO Office → Pollachi → Kinathukadavu
+
+Bus No 25
+
+Boarding Point: Meenachipuram Via Pollachi @7.00 AM
+Boarding Stages: Meenachipuram → Valandhyamaram → Kaliyappankavundanpudur Pirivu → Authu Pollachi → Ramapattinam Pirivu → Ayyampalayam → Nallur → NGM College → Pollachi → Achipatti → Kullakapalyam Pirivu → Kovilpalayam → Kinathukadavu
+
+Bus No 27
+
+Boarding Point: Jothinagar Via Pollachi @7.20 AM
+Boarding Stages: Jothinager → Omprakash Theatre → Pollachi → Mahalingapuram Arch → Nanjaigoundanputhur → Kinathukadavu
+
+Bus No 28
+
+Boarding Point: Irugur Pirivu via Podanur @7.00 AM
+Boarding Stages: Irugur Pirivu → Onidipudur → Singanallur → Ramanathapuram → Podanur Railway Station → Saradha Mill Road → Sundarapuram → Malumichampatti → Kinathukadavu
+
+Bus No 29
+
+Boarding Point: Dhansarpatti Via Kudimangalam @6.45 AM
+Boarding Stages: Dhasarpatti → Kudimangalam → Poolavadi Pirivu → Periyapatti → Munkillthozhuvu Pirivu → Veethampatti → Chandrapuram → Sirukanlanthai → Guruveygoundampalayam → Andipalayam → Vadasithur
+
+Bus No 30
+
+Boarding Point: Edayarpalayam Via Abirami Hospital @7.00 AM
+Boarding Stages: Edayarpalayam → Avila Convent → S.B. Kovil (MTP Road) → Poo Market → Marakadai → Abirami Hospital → Kamaraj Nagar → Madukarai Market → Malumichampatti → Kinathukadavu
+
+Bus No 31
+
+Boarding Point: Periyanaikkanpalayam Via Ukkadam @7.00 AM
+Boarding Stages: Periyanaikkanpalayam → Narasimanaikanpalayam → Vadamadurai → Thudiyalur → Kavundampalayam → MTP Bus Stand → S.B. Kovil → Poo Market → Marakadai → Ukkadam → Malumichampatti → Kinathukadavu
+
+Bus No 32
+
+Boarding Point: Madathukulam Via Udumalpet @6.45 AM
+Boarding Stages: Madathukulam → Palappampatti → Udumalpet → Mukkonam → Komangalam → Thippampatti → RTO Office → Pollachi → Kinathukadavu
+
+Bus No 33
+
+Boarding Point: Perumanallur Via New Bus Stand Tirupur @6.45 AM
+Boarding Stages: Perumanallur → Pandiyan Nagar → New Bus Stand → Veerapandi → Palladam → Vadugapalayam → Venkitapuram → Kamanaikkanpalayam → Sulthanpet → Senjeriprivu → Poorandampalayam → Matuvavi → Vadasithur
+
+Bus No 34
+
+Boarding Point: Sivanandha Colony via Nachipalayam @7.00 AM
+Boarding Stages: Sivanandha Colony → Tatabad → Gandhipark → Chokkampudur → Sivalaya Theatre → Puttiviki Kuniamuthur High School → Madukkarai Quarry Office → Madukkarai → Nataraj Hospital → Premier Mills → Kinathukadavu
+
+Bus No 38
+
+Boarding Point: Neelambur Via Cheetipalayam @7.00 AM
+Boarding Stages: Neelambur → SITRA → Hope College → Sowripalyam → Pulliyakulam → Ramanathapuram → Nanjundapuram → GD Tank → Chettipalayam → Panapatti Pirivu → Vadasithur
+
+Bus No 39
+
+Boarding Point: KG Chavadi Via Ettimadai @7.00 AM
+Boarding Stages: KG Chavadi → Ettimadai → Madukkarai Quarry Office → Madukkarai → Nataraj Hospital → Nachipalayam → Othakalmandapam → Premier Mills → Kinathukadavu
+
+Bus No 40
+
+Boarding Point: Mannarai Tirupur
+Boarding Stages: Mannarai → Usha Theatre → Veerapandi → Arulpuram → Palladam → Vadugapalayam → Venkitapuram → Kamanaikkanpalayam → Sulthanpet → Senjeriprivu → Kattampatti → Vadasithur
+
+Bus No 42
+
+Boarding Point: Kovaipudur @7.00 AM (via Madukkarai Quarry Office)
+Boarding Stages: Kovaipudur → Madukkarai Quarry Office → Malumichampatti → Kinathukadavu
