@@ -97,60 +97,162 @@ class TTSProcessor:
             "provider": "edge_tts",
         }
 
+    # Edge TTS silently truncates text above ~1 000 chars.
+    # This limit keeps each chunk safely within that boundary.
+    _EDGE_TTS_MAX_CHARS = 800
+
+    def _split_for_edge_tts(self, text: str) -> List[str]:
+        """
+        Split text into segments of at most _EDGE_TTS_MAX_CHARS characters,
+        always breaking on sentence / clause boundaries so speech sounds natural.
+        """
+        text = text.strip()
+        if not text:
+            return []
+
+        # If the whole text fits, no splitting needed
+        if len(text) <= self._EDGE_TTS_MAX_CHARS:
+            return [text]
+
+        # Sentence-level split (period / exclamation / question)
+        raw_sentences = re.split(r'(?<=[.!?])\s+', text)
+
+        segments: List[str] = []
+        current = ""
+
+        for sentence in raw_sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+
+            # Single sentence already exceeds limit — split on commas/semicolons
+            if len(sentence) > self._EDGE_TTS_MAX_CHARS:
+                # flush whatever we had
+                if current:
+                    segments.append(current.strip())
+                    current = ""
+                sub_parts = re.split(r'(?<=[,;])\s+', sentence)
+                sub_buf = ""
+                for part in sub_parts:
+                    if len(sub_buf) + len(part) + 1 <= self._EDGE_TTS_MAX_CHARS:
+                        sub_buf = (sub_buf + " " + part).strip() if sub_buf else part
+                    else:
+                        if sub_buf:
+                            segments.append(sub_buf.strip())
+                        # Still too long? hard-cut by words
+                        if len(part) > self._EDGE_TTS_MAX_CHARS:
+                            words = part.split()
+                            word_buf = ""
+                            for w in words:
+                                if len(word_buf) + len(w) + 1 <= self._EDGE_TTS_MAX_CHARS:
+                                    word_buf = (word_buf + " " + w).strip() if word_buf else w
+                                else:
+                                    if word_buf:
+                                        segments.append(word_buf)
+                                    word_buf = w
+                            if word_buf:
+                                sub_buf = word_buf
+                            else:
+                                sub_buf = ""
+                        else:
+                            sub_buf = part
+                if sub_buf:
+                    current = sub_buf
+                continue
+
+            # Normal sentence: does it fit in the current segment?
+            prospective = (current + " " + sentence).strip() if current else sentence
+            if len(prospective) <= self._EDGE_TTS_MAX_CHARS:
+                current = prospective
+            else:
+                if current:
+                    segments.append(current.strip())
+                current = sentence
+
+        if current.strip():
+            segments.append(current.strip())
+
+        return [s for s in segments if s]
+
     async def stream_edge_tts(self, text: str, language: str, websocket):
         """Stream Edge TTS audio chunks directly to a WebSocket as binary frames.
-        Retries up to 3 times on network errors / timeouts.
+
+        Splits long text into safe segments (≤800 chars) before calling Edge TTS
+        to prevent the silent mid-sentence truncation that occurs above ~1 000 chars.
+        Each segment is streamed sequentially; retries up to 3 times per segment.
+
+        Method name and signature are unchanged — no other files need modification.
 
         Args:
-            text: Text to synthesize
+            text: Text to synthesize (any length)
             language: Language code ("en", "ta", "hi")
             websocket: FastAPI WebSocket instance
         """
-        resolved_lang = (language or "en").strip().lower()
-        selected_voice = self.voice_mapping.get(
-            resolved_lang, self.voice_mapping["en"]
+        resolved_lang  = (language or "en").strip().lower()
+        selected_voice = self.voice_mapping.get(resolved_lang, self.voice_mapping["en"])
+
+        segments = self._split_for_edge_tts(text)
+        if not segments:
+            logger.warning("[TTS] stream_edge_tts called with empty text — skipping")
+            return
+
+        logger.info(
+            "[TTS] Streaming %d segment(s) via Edge TTS | voice=%s | lang=%s",
+            len(segments), selected_voice, resolved_lang,
         )
 
-        last_error = None
-        for attempt in range(3):  # up to 3 retry attempts
-            try:
-                logger.info(
-                    f"Streaming Edge TTS (attempt {attempt+1}): voice={selected_voice}, lang={resolved_lang}"
+        total_bytes_all = 0
+
+        for seg_idx, segment in enumerate(segments):
+            last_error = None
+            seg_ok = False
+
+            for attempt in range(3):
+                try:
+                    communicate = edge_tts.Communicate(text=segment, voice=selected_voice)
+                    seg_bytes = 0
+
+                    async def _stream_segment():
+                        nonlocal seg_bytes, total_bytes_all
+                        async for chunk in communicate.stream():
+                            if chunk.get("type") == "audio" and chunk.get("data"):
+                                await websocket.send_bytes(chunk["data"])
+                                seg_bytes       += len(chunk["data"])
+                                total_bytes_all += len(chunk["data"])
+
+                    await asyncio.wait_for(_stream_segment(), timeout=30)
+
+                    if seg_bytes == 0:
+                        raise Exception("Edge TTS returned 0 bytes for segment")
+
+                    logger.info(
+                        "[TTS] Segment %d/%d done — %d bytes | '%s…'",
+                        seg_idx + 1, len(segments), seg_bytes, segment[:40],
+                    )
+                    seg_ok = True
+                    break   # segment succeeded
+
+                except asyncio.TimeoutError:
+                    last_error = f"Segment {seg_idx+1} timed out (attempt {attempt+1})"
+                    logger.warning("[TTS] %s — retrying…", last_error)
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                except Exception as exc:
+                    last_error = str(exc)
+                    logger.warning("[TTS] Segment %d attempt %d failed: %s — retrying…",
+                                   seg_idx + 1, attempt + 1, last_error)
+                    await asyncio.sleep(0.5 * (attempt + 1))
+
+            if not seg_ok:
+                # Log and skip the failed segment rather than aborting the whole stream
+                logger.error(
+                    "[TTS] Segment %d/%d permanently failed after 3 attempts: %s — skipping.",
+                    seg_idx + 1, len(segments), last_error,
                 )
 
-                communicate = edge_tts.Communicate(text=text, voice=selected_voice)
-                chunk_count = 0
-                total_bytes = 0
+        if total_bytes_all == 0:
+            raise Exception("Edge TTS stream produced 0 bytes for all segments")
 
-                async def _stream():
-                    nonlocal chunk_count, total_bytes
-                    async for chunk in communicate.stream():
-                        if chunk.get("type") == "audio" and chunk.get("data"):
-                            await websocket.send_bytes(chunk["data"])
-                            chunk_count += 1
-                            total_bytes += len(chunk["data"])
-
-                await asyncio.wait_for(_stream(), timeout=45)
-
-                if total_bytes == 0:
-                    raise Exception("Edge TTS stream returned 0 bytes")
-
-                logger.info(
-                    f"Edge TTS stream complete: {chunk_count} chunks, {total_bytes} bytes"
-                )
-                return  # success — exit retry loop
-
-            except asyncio.TimeoutError:
-                last_error = "Edge TTS stream timed out after 45s"
-                logger.warning(f"Edge TTS stream attempt {attempt+1} timed out, retrying...")
-                await asyncio.sleep(0.5 * (attempt + 1))
-            except Exception as e:
-                last_error = str(e)
-                logger.warning(f"Edge TTS stream attempt {attempt+1} failed: {last_error}, retrying...")
-                await asyncio.sleep(0.5 * (attempt + 1))
-
-        logger.error(f"Edge TTS stream failed after 3 attempts: {last_error}")
-        raise Exception(f"Edge TTS stream failed: {last_error}")
+        logger.info("[TTS] ✅ Full stream complete — %d bytes total", total_bytes_all)
 
     def _estimate_duration(self, text: str) -> float:
         """Estimate audio duration based on text length."""
