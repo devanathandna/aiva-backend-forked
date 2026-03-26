@@ -12,9 +12,7 @@ CHUNK_COLLECTION_NAME    = "KnowledgeChunks"
 CHUNK_RESULTS            = 3
 ROUTER_MAX_SOURCES       = 2
 ROUTER_TEXT_LIMIT        = 6000
-KNOWLEDGE_FILES = {
-    "Dataset": os.path.join(BASE_DIR, "Dataset.txt"),
-}
+# Active dataset files are configured in rag_faiss/config.py
 WEBSOCKET_HOST = os.getenv("HOST", "0.0.0.0")
 WEBSOCKET_PORT = int(os.getenv("PORT", "8000"))
 
