@@ -53,8 +53,21 @@ EMBED_URL_TEMPLATE = (
 )
 
 
+# Gemini embedding API has a max input token limit; truncate text to be safe
+_MAX_EMBED_CHARS = 8000  # ~2000 tokens, well within the 2048-token limit
+
+
 def _embed_single(text: str, key: str) -> List[float]:
     """Embed a single text using the embedContent endpoint."""
+    # Ensure text is non-empty and within limits
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("Cannot embed empty text.")
+    text = text[:_MAX_EMBED_CHARS]
+
+    # NOTE: gemini-embedding-001 REST API requires the 'model' field in the
+    # request body in addition to the path parameter, and uses the API key
+    # as a header (x-goog-api-key) rather than a query param.
     payload = {
         "model": EMBEDDING_MODEL,
         "content": {"parts": [{"text": text}]},
@@ -62,12 +75,27 @@ def _embed_single(text: str, key: str) -> List[float]:
     }
     resp = requests.post(
         EMBED_URL_TEMPLATE,
-        params={"key": key},
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": key,
+        },
         json=payload,
         timeout=30,
     )
+    if not resp.ok:
+        print(f"  [embed] ERROR {resp.status_code}: {resp.text[:1000]}")
     resp.raise_for_status()
-    return resp.json()["embedding"]["values"]
+
+    data = resp.json()
+    # Handle both response shapes:
+    #   { "embedding": { "values": [...] } }  ← older models
+    #   { "embeddings": [{ "values": [...] }] } ← newer batch format
+    if "embedding" in data:
+        return data["embedding"]["values"]
+    elif "embeddings" in data:
+        return data["embeddings"][0]["values"]
+    else:
+        raise RuntimeError(f"Unexpected embedding response shape: {list(data.keys())}")
 
 
 def _embed_texts(texts: List[str], batch_size: int = 20) -> np.ndarray:
@@ -77,6 +105,11 @@ def _embed_texts(texts: List[str], batch_size: int = 20) -> np.ndarray:
 
     vecs: List[List[float]] = []
     key_index = 0
+
+    # Pre-filter empty texts
+    texts = [t for t in texts if t and t.strip()]
+    if not texts:
+        raise RuntimeError("All text chunks were empty after filtering.")
 
     for i, text in enumerate(texts):
         max_attempts = len(GEMINI_API_KEYS) * 3

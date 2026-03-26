@@ -112,7 +112,10 @@ def _embed_query(text: str) -> np.ndarray:
         try:
             resp = session.post(
                 EMBED_URL,
-                params={"key": key},
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": key,
+                },
                 json={
                     "model": EMBEDDING_MODEL,
                     "content": {"parts": [{"text": text}]},
@@ -125,8 +128,16 @@ def _embed_query(text: str) -> np.ndarray:
                 _embed_key_idx += 1
                 last_err = "rate_limited"
                 continue
+            if not resp.ok:
+                logger.error(f"[RETRIEVER] Embed error {resp.status_code}: {resp.text[:500]}")
             resp.raise_for_status()
-            values = resp.json()["embedding"]["values"]
+            data = resp.json()
+            if "embedding" in data:
+                values = data["embedding"]["values"]
+            elif "embeddings" in data:
+                values = data["embeddings"][0]["values"]
+            else:
+                raise RuntimeError(f"Unexpected embedding response shape: {list(data.keys())}")
             vec = np.array([values], dtype=np.float32)
             faiss.normalize_L2(vec)
 
