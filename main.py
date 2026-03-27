@@ -51,16 +51,22 @@ async def startup():
     load_faiss_index()
     logger.info("[STARTUP] ✅ FAISS index ready")
 
-    # ── 2. Pre-warm BGE embedding model ───────────────────────────────
-    # Run in executor so we don't block the event loop during model load.
-    logger.info("[STARTUP] Loading BGE embedding model (BAAI/bge-base-en-v1.5)...")
+    # ── 2. Pre-warm BGE embedding model (BACKGROUND) ──────────────────
+    # Render requires the port to be bound within ~60s. Downloading/loading
+    # a 400MB embedding model can take longer than that. We must run this in
+    # the background without `await` block so uvicorn binds immediately.
+    logger.info("[STARTUP] Scheduling BGE embedding model load in background...")
+    
+    def _do_warmup():
+        try:
+            from rag_faiss.embedder import embed_query as _warmup_embed
+            _warmup_embed("warmup query")
+            logger.info("[STARTUP] ✅ BGE embedding model warm and ready")
+        except Exception as e:
+            logger.warning(f"[STARTUP] BGE pre-warm failed (non-fatal): {e}")
+            
     loop = asyncio.get_running_loop()
-    try:
-        from rag_faiss.embedder import embed_query as _warmup_embed
-        await loop.run_in_executor(None, _warmup_embed, "warmup query")
-        logger.info("[STARTUP] ✅ BGE embedding model warm and ready")
-    except Exception as e:
-        logger.warning(f"[STARTUP] BGE pre-warm failed (non-fatal): {e}")
+    loop.run_in_executor(None, _do_warmup)
 
     # ── 3. Pre-warm Groq Llama client ─────────────────────────────────
     logger.info("[STARTUP] Initializing Groq LLM client...")
