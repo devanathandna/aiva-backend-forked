@@ -6,6 +6,29 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 # Always load the backend .env from the project root, regardless of where scripts are run.
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, ".env"))
 
+# ── Gemini API keys (rotation: KEY_1 → KEY_2 on rate-limit) ──────────
+GEMINI_API_KEY_1 = os.getenv("GEMINI_API_KEY_1", "").strip()
+GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_2", "").strip()
+
+# Fallback: single GEMINI_API_KEY for backward compat
+_fallback = os.getenv("GEMINI_API_KEY", "").strip()
+
+GEMINI_API_KEYS: list = [k for k in [GEMINI_API_KEY_1, GEMINI_API_KEY_2] if k]
+if not GEMINI_API_KEYS and _fallback:
+    GEMINI_API_KEYS = [_fallback]
+
+if not GEMINI_API_KEYS:
+    raise RuntimeError(
+        "No Gemini API key found. "
+        "Set GEMINI_API_KEY_1 and GEMINI_API_KEY_2 (or GEMINI_API_KEY) in .env"
+    )
+
+# For backward compat — modules that import GEMINI_API_KEY directly
+GEMINI_API_KEY = GEMINI_API_KEYS[0]
+
+# ── Gemini embedding model ────────────────────────────────────────────
+EMBEDDING_MODEL = "models/gemini-embedding-001"
+
 # ── Source documents ──────────────────────────────────────────────────
 DATA_DIR = os.path.join(BASE_DIR, "rag_faiss", "data")
 

@@ -61,15 +61,10 @@ def _background_warmup():
         _load_faiss()
         logger.info("[STARTUP-BG] ✅ FAISS index ready")
 
-        # ── 2. Pre-warm BGE embedding model ────────────────────────────
-        _warmup_status = "loading BGE embedding model (~438 MB)"
-        logger.info("[STARTUP-BG] Loading BGE embedding model...")
-        try:
-            from rag_faiss.embedder import embed_query as _warmup_embed
-            _warmup_embed("warmup query")
-            logger.info("[STARTUP-BG] ✅ BGE embedding model warm and ready")
-        except Exception as e:
-            logger.warning(f"[STARTUP-BG] BGE pre-warm failed (non-fatal): {e}")
+        # ── 2. Gemini embedding — cloud API, no local model to load ─────
+        _warmup_status = "verifying Gemini embedding API"
+        logger.info("[STARTUP-BG] Gemini embedding uses cloud API — no heavy model to load")
+        logger.info("[STARTUP-BG] ✅ Gemini embedding ready (cloud API)")
 
         # ── 3. Pre-warm Groq Llama client ──────────────────────────────
         _warmup_status = "initializing Groq LLM client"
@@ -144,7 +139,7 @@ async def health_check():
 
     return {
         **base,
-        "embedding": "BAAI/bge-base-en-v1.5 (local, no API)",
+        "embedding": "Gemini embedding-001 (cloud API)",
         "llm": "Groq llama-3.1-8b-instant",
         "stt_en": "Groq whisper-large-v3-turbo",
         "stt_ta": "Sarvam saarika:v2",

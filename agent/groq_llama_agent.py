@@ -6,7 +6,7 @@ Pipeline target: RAG + LLM < 1 second.
 Key optimizations:
   - Model: llama-3.1-8b-instant  (~200-400ms vs 1800ms for 70b)
   - max_tokens: 300 (tight cap — AIVA responses are always short)
-  - RAG timeout: 3s (was 8s — BGE embed is ~82ms, no need for 8s)
+  - RAG timeout: 3s (Gemini embed ~150ms + FAISS ~2ms, well within budget)
   - Context: max 600 chars fed to LLM (was uncapped)
   - History: max 3 turns, truncated eagerly
   - Groq client: persistent singleton per key (no per-request init)
@@ -249,11 +249,11 @@ async def get_agent_response(
     Get LLM response with FAISS RAG context.
 
     Latency breakdown (targets):
-      RAG embed + FAISS:  ~85ms  (local BGE, cached after first call)
+      RAG embed + FAISS:  ~150ms (Gemini cloud API, cached after first call)
       Groq LLM:           ~300ms (llama-3.1-8b-instant, max_tokens=300)
       JSON parse:         <1ms
       ──────────────────
-      Total agent:        ~400ms
+      Total agent:        ~500ms
     """
     try:
         # ── Language instruction ──────────────────────────────────────────
@@ -278,7 +278,7 @@ async def get_agent_response(
             query_to_search = rag_query if rag_query else user_query
             rag_results = await asyncio.wait_for(
                 loop.run_in_executor(None, _get_retriever(), query_to_search),
-                timeout=3.0,    # BGE embed ≈82ms + FAISS ≈2ms <<< 3s
+                timeout=3.0,    # Gemini embed ≈150ms + FAISS ≈2ms <<< 3s
             )
             rag_ms = (time.perf_counter() - rag_start) * 1000
             logger.info(f"⏱️ RAG: {rag_ms:.0f}ms")

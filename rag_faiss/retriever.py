@@ -1,10 +1,12 @@
 """
-retriever.py  –  Load FAISS index once; answer queries with fast sub-50ms retrieval.
+retriever.py – Load FAISS index once, then answer queries with
+sub-50 ms retrieval by looking up pickle chunks via the index map.
 
-Embedding strategy (consistent with build_index.py):
-  • Local HuggingFace sentence-transformers model (no API, no rate limits).
-  • LRU embedding cache – identical queries skip the model entirely.
-  • Persistent FAISS index loaded once at startup.
+Embedding: Google Gemini API (models/gemini-embedding-001)
+  - Cloud-hosted, no local model download required
+  - Dual API-key rotation on rate-limit (429) errors
+  - LRU embedding cache – identical queries skip the API call entirely
+  - Persistent FAISS index loaded once at startup
 
 Usage (standalone test):
     python -m rag_faiss.retriever
@@ -13,21 +15,62 @@ Usage (standalone test):
 import os
 import pickle
 import time
+import threading
 import numpy as np
 import faiss
 
 from typing import Optional, Dict, Tuple, List
 import logging
 
+import google.generativeai as genai
+
 from rag_faiss.config import (
+    GEMINI_API_KEYS,
     FAISS_INDEX_PATH,
     INDEX_MAP_PATH,
     PICKLES_DIR,
     TOP_K,
+    EMBEDDING_MODEL,
 )
-from rag_faiss.embedder import embed_query as _embed_query_local
 
 logger = logging.getLogger(__name__)
+
+
+# ── Gemini key rotation manager ──────────────────────────────────────────────
+
+class _GeminiKeyManager:
+    """Thread-safe round-robin over GEMINI_API_KEY_1 / _2."""
+
+    def __init__(self, keys: List[str]):
+        self._keys  = keys
+        self._index = 0
+        self._lock  = threading.Lock()
+        # Configure the first key immediately
+        genai.configure(api_key=self._keys[0])
+        logger.info("[RETRIEVER] Gemini keys loaded: %d key(s)", len(self._keys))
+
+    @property
+    def current_key(self) -> str:
+        with self._lock:
+            return self._keys[self._index]
+
+    def rotate(self) -> bool:
+        """Advance to the next key. Returns True if rotation succeeded."""
+        with self._lock:
+            if len(self._keys) <= 1:
+                return False
+            prev = self._index
+            self._index = (self._index + 1) % len(self._keys)
+            genai.configure(api_key=self._keys[self._index])
+            logger.warning(
+                "[RETRIEVER] 🔄 Rotated Gemini key #%d → #%d",
+                prev + 1, self._index + 1,
+            )
+            return True
+
+
+_key_mgr = _GeminiKeyManager(GEMINI_API_KEYS)
+
 
 # ── Module-level singletons (loaded once at startup) ─────────────────────────
 _faiss_index:       Optional[faiss.Index]             = None
@@ -35,9 +78,9 @@ _index_map:         Optional[Dict[int, Tuple[str, int]]] = None
 _pickle_cache:      Dict[str, List[str]]               = {}
 _loaded_successfully: bool                             = False
 
-# LRU embedding cache – skip model for repeated queries
+# LRU embedding cache – skip API call for repeated queries
 _embed_cache:     Dict[str, np.ndarray] = {}
-_EMBED_CACHE_MAX  = 512   # large cache for high-traffic deployments
+_EMBED_CACHE_MAX  = 512
 
 
 # ── FAISS index loader ───────────────────────────────────────────────────────
@@ -81,28 +124,51 @@ def _load_pickle(pickle_filename: str) -> List[str]:
     return _pickle_cache[pickle_filename]
 
 
-# ── Query embedder ───────────────────────────────────────────────────────────
+# ── Query embedder (Gemini API with key rotation) ────────────────────────────
 
 def _embed_query(text: str) -> np.ndarray:
     """
-    Embed a single query string using the local HuggingFace model.
+    Embed a single query string using Gemini embedding API.
     • Returns a (1, dim) float32 array, L2-normalised.
     • Uses LRU cache to skip identical repeated queries.
-    No API calls, no rate limits.
+    • Rotates to next Gemini key on rate-limit errors.
     """
     cache_key = text.strip().lower()
     if cache_key in _embed_cache:
         logger.debug("[RETRIEVER] Embedding cache HIT")
         return _embed_cache[cache_key]
 
-    vec = _embed_query_local(text)
+    max_retries = len(GEMINI_API_KEYS)
+    for attempt in range(max_retries):
+        try:
+            result = genai.embed_content(
+                model=EMBEDDING_MODEL,
+                content=text,
+            )
+            vec = np.array([result["embedding"]], dtype=np.float32)
+            faiss.normalize_L2(vec)
 
-    # Store in LRU cache
-    if len(_embed_cache) >= _EMBED_CACHE_MAX:
-        oldest = next(iter(_embed_cache))
-        del _embed_cache[oldest]
-    _embed_cache[cache_key] = vec
-    return vec
+            # Store in LRU cache
+            if len(_embed_cache) >= _EMBED_CACHE_MAX:
+                oldest = next(iter(_embed_cache))
+                del _embed_cache[oldest]
+            _embed_cache[cache_key] = vec
+            return vec
+
+        except Exception as e:
+            err_str = str(e).lower()
+            is_rate_limit = "429" in err_str or "rate" in err_str or "quota" in err_str
+            if is_rate_limit and attempt < max_retries - 1:
+                logger.warning(
+                    "[RETRIEVER] Rate-limited on key #%d, rotating...",
+                    _key_mgr._index + 1,
+                )
+                if _key_mgr.rotate():
+                    time.sleep(0.5)
+                    continue
+            raise  # non-rate-limit error or all keys exhausted
+
+    raise RuntimeError("[RETRIEVER] All Gemini keys exhausted for embedding")
 
 
 # ── Public retrieval API ─────────────────────────────────────────────────────
@@ -163,6 +229,7 @@ if __name__ == "__main__":
         print("[RETRIEVER] ❌ No FAISS index found – run build_index first.")
     else:
         print(f"[RETRIEVER] Index loaded: {_faiss_index.ntotal} vectors")
+        print(f"[RETRIEVER] Gemini keys: {len(GEMINI_API_KEYS)}")
 
         test_queries = [
             "What awards did students win?",

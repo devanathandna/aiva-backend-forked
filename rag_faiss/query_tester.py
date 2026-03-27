@@ -28,7 +28,7 @@ try:
         TOP_K,
         HNSW_EF_SEARCH,
     )
-    from rag_faiss.embedder import embed_query as _embed_query_fn
+    from rag_faiss.retriever import _embed_query as _embed_query_fn
 except ImportError:
     from config import (
         FAISS_INDEX_PATH,
@@ -37,12 +37,12 @@ except ImportError:
         TOP_K,
         HNSW_EF_SEARCH,
     )
-    from embedder import embed_query as _embed_query_fn
+    from retriever import _embed_query as _embed_query_fn
 
 class QueryTester:
     def __init__(self):
-        """Initialize the Query Tester with FAISS index and local BGE embedder."""
-        print("🚀 Initializing Query Tester (local BGE embedder — no API keys needed)...")
+        """Initialize the Query Tester with FAISS index and Gemini embedder."""
+        print("🚀 Initializing Query Tester (Gemini embedding API)...")
         self.faiss_index = None
         self.index_map   = None
         self.pickle_cache = {}
@@ -68,7 +68,7 @@ class QueryTester:
             self.index_map = pickle.load(f)
 
     def _embed_query(self, text: str) -> np.ndarray:
-        """Embed using local BGE model — no API, no rate limits."""
+        """Embed using Gemini embedding API."""
         return _embed_query_fn(text)
 
     def _load_pickle(self, pickle_filename: str) -> List[str]:
